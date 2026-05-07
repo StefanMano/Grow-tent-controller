@@ -1,93 +1,302 @@
-
-
-
+#include <Arduino.h>
+#include <SensirionI2CScd4x.h>
+#include <Wire.h>
 #include <LiquidCrystal_I2C.h>
-LiquidCrystal_I2C lcd(0x27,16,2);
+LiquidCrystal_I2C lcd(0x27,20,4);
+SensirionI2CScd4x scd4x;
+#include <avr/interrupt.h>
 
-const byte AC = 2, cald = 3, apa = 4, aer = 5;
-byte contor = 0, val_timer_apa = 0;
-unsigned int timer = 0,contor_aer = 0,timer_fae_aux=0, timer_fae = 0, ac_fae = 0;
+#define PIN0 0
+#define PIN1 1
+#define PIN2 2
+#define PIN3 3
+#define PIN4 4
+#define PIN5 5
+#define PIN6 6
+#define PIN7 7
 
+uint16_t setCO2=1000;
+float setTemp=20.0f;
+float setRH=85.0f;
 
-void setup()
+ISR(INT0_vect)
 {
-  Serial.begin(9600);
+  SREG &= ~(1<<SREG_I); 
+  Serial.println("interrupt start");
+  int16_t i=0;
+  bool setting = false;
+  lcdprintmenu(setting, i);
   
+
+  //sa aiba butoanele de pe pin 4,5 desene de up/down
+  while(PIND & 1<<PIN2 == 1<<PIN2){
+      setting = false;
+      if(PIND & 1<<PIN5 == 0)
+        i++;
+      if(PIND & 1<<PIN4 == 0)
+        i--;
+      
+      lcdprintmenu(setting, i);
+      if(PIND & 1<<PIN3 == 0)
+      {
+        setting = true;
+        delay(1000);
+        switch (i%3){
+            case 0:
+              lcdprintmenu(setting, i);
+              while(PIND & 1<<PIN3 == 1<<PIN3){
+                
+                if(PIND & 1<<PIN5 == 0){
+                    setCO2 += 10;
+                    lcdprintmenu(setting, i);
+                    delay(100);
+                } 
+                if(PIND & 1<<PIN4 == 0){
+                    setCO2 -= 10;
+                    lcdprintmenu(setting, i);
+                    delay(100);
+                }
+              }
+              break;
+
+            case 1:
+              lcdprintmenu(setting, i);
+              while(PIND & 1<<PIN3 == 1<<PIN3){
+                if(PIND & 1<<PIN5 == 0){
+                  setTemp += 0.1;
+                  lcdprintmenu(setting, i);
+                  delay(100);
+                }
+                if(PIND & 1<<PIN4 == 0){
+                  setTemp -= 0.1;
+                  lcdprintmenu(setting, i);
+                  delay(100);
+                }
+              }
+              break;
+
+
+            case 2:
+              lcdprintmenu(setting, i);
+              while(PIND & 1<<PIN3 == 1<<PIN3){
+                if(PIND & 1<<PIN5 == 0){
+                  setRH += 1;
+                  lcdprintmenu(setting, i);
+                  delay(100);
+                }
+                if(PIND & 1<<PIN4 == 0){
+                  setRH -= 1;
+                  lcdprintmenu(setting, i);
+                  delay(100);
+                }
+              }
+              break;
+
+        }
+        
+
+      }
+
+  }
+
+
+  SREG |= 1<<SREG_I;
+}
+/*
+void printSerialNumber(uint16_t serial0, uint16_t serial1, uint16_t serial2) {
+    Serial.print("Serial: 0x");
+    printUint16Hex(serial0);
+    printUint16Hex(serial1);
+    printUint16Hex(serial2);
+    Serial.println();
+}
+void printUint16Hex(uint16_t value) {
+    Serial.print(value < 4096 ? "0" : "");
+    Serial.print(value < 256 ? "0" : "");
+    Serial.print(value < 16 ? "0" : "");
+    Serial.print(value, HEX);
+}
+*/
+void lcdprintmenu(bool setting, int16_t i){
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("Set CO2 = ");
+  lcd.setCursor(10,0);
+  lcd.print(setCO2);
+  lcd.setCursor(15,0);
+  lcd.print("ppm");
+  
+  lcd.setCursor(0,1);
+  lcd.print("Set Temp = ");
+  lcd.setCursor(12,1);
+  lcd.print(setTemp);
+  lcd.setCursor(16,1);
+  lcd.print("C");
+
+  lcd.setCursor(0,2);
+  lcd.print("Set Umid = ");
+  lcd.setCursor(12,1);
+  lcd.print(setRH);
+  lcd.setCursor(16,1);
+  lcd.print("%");
+
+  lcd.setCursor(0,3);
+  if (setting = false)
+    lcd.print("Select  V  Inapoi ->");
+  else
+    lcd.print("Inapoi  V");
+
+  lcd.setCursor(19,i%3);
+  lcd.print("*");
+}
+
+void printlcd(uint16_t co2, float temperature, float humidity){
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("CO2 = ");
+  lcd.setCursor(6,0);
+  lcd.print(co2);
+  lcd.setCursor(11,0);
+  lcd.print("ppm");
+
+  lcd.setCursor(0,1);
+  lcd.print("Temperatura = ");
+  lcd.setCursor(14,1);
+  lcd.print(temperature);
+  lcd.setCursor(18,1);
+  lcd.print("C");
+
+  lcd.setCursor(0,2);
+  lcd.print("Umiditate = ");
+  lcd.setCursor(12,2);
+  lcd.print(humidity);
+  lcd.setCursor(16,2);
+  lcd.print("%");
+
+  lcd.setCursor(0,3);
+  lcd.print("Seteaza parametrii >");
+}
+void setup() {
+
+  SREG |= 1<<SREG_I;
+  //HI-LO INTERRUPT ON PIN 0
+  EICRA = (0<<ISC11)|(0<<ISC10)|(1<<ISC01)|(0<<ISC00);
+  EIMSK = (0<<INT1)|(1<<INT0);
+  EIFR = (0<<INTF1)|(0<<INTF0);
+  DDRD = 0x00;
+  PORTD = 0xFF;//tre schimbat pe pinii care au butoane doar
+
+  //outputs
+  DDRB = 0xFF;
+  PORTB = 0x00;
+  // put your setup code here, to run once:
+  Serial.begin(57600);       //Start serial com with the BT module (RX and TX pins   
   lcd.init();       //Start the LC communication
   lcd.backlight();  //Turn on backlight for LCD
-  
-  DDRD = (0<<AC)|(0<<cald)|(1<<apa)|(1<<aer); 			//seteaza AC si caldura ca input, apa si aer ca output
-  PORTD = 0x00; 										//toate outputurile sunt 0 si pull up e oprit
-  SREG |= (1<<SREG_I);									//permite intreruperi
-  EICRA = (0<<ISC11)|(1<<ISC10)|(0<<ISC01)|(1<<ISC00);	//se presupune ca toate sistemele de ac/cald sunt oprite si se va porni prima intrerupere cand porneste unul
-  EIMSK = (1<<INT0)|(1<<INT1);							//foloseste ambii pini de intreruperi extrene
-  
-  TCCR0A = (0<<WGM00)|(0<<WGM01); //seteaza mod CTC
-  TCCR0B = (0<<WGM02)|(1<<CS02)|(0<<CS01)|(0<<CS00); // mod CTC si prescalar 64(e posibil sa trebuiasca 1024 daca nu am inteles bien fisa si merge la 16 MHz sau altceva la 8MHz)
-  OCR0A = 0xFA ;
-  TIMSK0 = 1<<OCIE0A; 
-  SREG |= (1<<SREG_I);									//permite intreruperi
+  //init of lcd screen
 
+  Wire.begin();
+
+  uint16_t error;
+  char errorMessage[256];
+
+  scd4x.begin(Wire);
+
+  // stop potentially previously started measurement
+  error = scd4x.stopPeriodicMeasurement();
+  if (error) {
+      Serial.print("Error trying to execute stopPeriodicMeasurement(): ");
+      errorToString(error, errorMessage, 256);
+      Serial.println(errorMessage);
+  }
+
+  /*uint16_t serial0;
+  uint16_t serial1;
+  uint16_t serial2;
+  error = scd4x.getSerialNumber(serial0, serial1, serial2);
+  if (error) {
+      Serial.print("Error trying to execute getSerialNumber(): ");
+      errorToString(error, errorMessage, 256);
+      Serial.println(errorMessage);
+  } else {
+      printSerialNumber(serial0, serial1, serial2);
+  }
+*/
+  // Start Measurement
+  error = scd4x.startPeriodicMeasurement();
+  if (error) {
+      Serial.print("Error trying to execute startPeriodicMeasurement(): ");
+      errorToString(error, errorMessage, 256);
+      Serial.println(errorMessage);
+  }
+
+  //Serial.println("Waiting for first measurement... (5 sec)");
 }
 
-void loop()
-{
-  //Serial.print(timer);
-  //Serial.print("; ");
-  //Serial.println(val_timer_apa+ac_fae);
-  
-  if(val_timer_apa !=0){
-    if(ac_fae+val_timer_apa<=timer){
-    	val_timer_apa=0;
-      	PORTD &= ~(1<<apa);
+void loop() {
+
+  uint16_t error;
+  char errorMessage[256];
+
+  delay(100);
+
+  // Read Measurement & afisare
+  uint16_t co2 = 0;
+  float temperature = 0.0f;
+  float humidity = 0.0f;
+  bool isDataReady = false;
+
+  error = scd4x.getDataReadyFlag(isDataReady);
+  if (error) {
+      Serial.print("Error trying to execute getDataReadyFlag(): ");
+      errorToString(error, errorMessage, 256);
+      Serial.println(errorMessage);
+      return;
+  }
+  if (!isDataReady) {
+      return;
+  }
+
+
+
+  error = scd4x.readMeasurement(co2, temperature, humidity);
+  if (error) {
+      Serial.print("Error trying to execute readMeasurement(): ");
+      errorToString(error, errorMessage, 256);
+      Serial.println(errorMessage);
+  } else if (co2 == 0) {
+      Serial.println("Invalid sample detected, skipping.");
+  } 
+  else {
+    printlcd(co2,temperature,humidity);
+    //FAE
+    if(co2>setCO2+200)
+      PORTB|=1<<PIN0;
+    else if(co2<setCO2-100)
+      PORTB &= ~(1<<PIN0);
+    // temp daca merge aerul
+    if(PINB & (1<<PIN0) == 1<<PIN0){
+      //cald
+      if(temperature<setTemp-1)
+        PORTB|=1<<PIN1;
+      else if(temperature>setTemp+1)
+        PORTB &= ~(1<<PIN1);
+      
+      //rece
+      if(temperature>setTemp+2)
+        PORTB|=1<<PIN2;
+      else if(temperature<setTemp)
+        PORTB &= ~(1<<PIN2);
+      }
+      //daca nu merge oprim tot 
+    else{
+      PORTB &= ~(1<<PIN1);
+      PORTB &= ~(1<<PIN2);
     }
+
+    if(humidity<setRH-10)
+      PORTB|=1<<PIN3;
+    else if (humidity>setRH+5)
+      PORTB &= ~(1<<PIN3);
   }
 }
-
-
-//contor secunde
-ISR (TIMER0_COMPA_vect){
-  SREG &= ~(1<<SREG_I);
-  ++contor;
-  if(contor == 244){
-  	contor = 0;
-    ++timer;
-  }
-    
-  SREG |= (1<<SREG_I);	 
-}
-
-//schimbare stare AC
-ISR(INT0_vect){
-  SREG &= ~(1<<SREG_I);
-  if(PIND & (1<<AC)){		//cand e low (s-a oprit AC)  
-    PORTD |= 1<<apa;
-    timer_fae_aux = timer;
-    ++contor_aer;
-  }
-  else{						//cand e high (s-a pornit AC)
-    val_timer_apa = 15;
-    timer_fae = timer-timer_fae_aux;
-    timer_fae_aux = 0;
-   	ac_fae = timer;
-  }
-  SREG |= (1<<SREG_I);	
-}
-
-
-//schimbare stare cald
-ISR(INT1_vect){  
-  SREG &= ~(1<<SREG_I);
-  if(PIND & (1<<cald)){		//cand e low (s-a oprit aerul cald)
-    PORTD |= 1<<apa;
-    timer_fae_aux = timer;
-    ++contor_aer;
-  }
-  else{						//cand e high (s-a pornit aerul cald)
-    val_timer_apa = 15;
-    timer_fae = timer-timer_fae_aux;
-    timer_fae_aux = 0;
-   	ac_fae = timer;
-  }
-  SREG |= (1<<SREG_I);
-}	
