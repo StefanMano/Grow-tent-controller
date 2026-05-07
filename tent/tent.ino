@@ -16,91 +16,22 @@ SensirionI2CScd4x scd4x;
 #define PIN7 7
 
 uint16_t setCO2=1000;
-float setTemp=20.0f;
+float setTemp=16.0f;
 float setRH=85.0f;
-
+volatile bool menu_interrupt = false;
+int16_t i=1002;
+volatile bool setting = false;
 ISR(INT0_vect)
 {
-  SREG &= ~(1<<SREG_I); 
-  Serial.println("interrupt start");
-  int16_t i=0;
-  bool setting = false;
-  lcdprintmenu(setting, i);
-  
-
-  //sa aiba butoanele de pe pin 4,5 desene de up/down
-  while(PIND & 1<<PIN2 == 1<<PIN2){
-      setting = false;
-      if(PIND & 1<<PIN5 == 0)
-        i++;
-      if(PIND & 1<<PIN4 == 0)
-        i--;
-      
-      lcdprintmenu(setting, i);
-      if(PIND & 1<<PIN3 == 0)
-      {
-        setting = true;
-        delay(1000);
-        switch (i%3){
-            case 0:
-              lcdprintmenu(setting, i);
-              while(PIND & 1<<PIN3 == 1<<PIN3){
-                
-                if(PIND & 1<<PIN5 == 0){
-                    setCO2 += 10;
-                    lcdprintmenu(setting, i);
-                    delay(100);
-                } 
-                if(PIND & 1<<PIN4 == 0){
-                    setCO2 -= 10;
-                    lcdprintmenu(setting, i);
-                    delay(100);
-                }
-              }
-              break;
-
-            case 1:
-              lcdprintmenu(setting, i);
-              while(PIND & 1<<PIN3 == 1<<PIN3){
-                if(PIND & 1<<PIN5 == 0){
-                  setTemp += 0.1;
-                  lcdprintmenu(setting, i);
-                  delay(100);
-                }
-                if(PIND & 1<<PIN4 == 0){
-                  setTemp -= 0.1;
-                  lcdprintmenu(setting, i);
-                  delay(100);
-                }
-              }
-              break;
-
-
-            case 2:
-              lcdprintmenu(setting, i);
-              while(PIND & 1<<PIN3 == 1<<PIN3){
-                if(PIND & 1<<PIN5 == 0){
-                  setRH += 1;
-                  lcdprintmenu(setting, i);
-                  delay(100);
-                }
-                if(PIND & 1<<PIN4 == 0){
-                  setRH -= 1;
-                  lcdprintmenu(setting, i);
-                  delay(100);
-                }
-              }
-              break;
-
-        }
-        
-
-      }
-
+  if(menu_interrupt){
+    menu_interrupt = false;
+    
   }
-
-
-  SREG |= 1<<SREG_I;
+  else{
+    menu_interrupt = true;
+    i=1002;
+   setting = false;
+  }
 }
 /*
 void printSerialNumber(uint16_t serial0, uint16_t serial1, uint16_t serial2) {
@@ -119,32 +50,32 @@ void printUint16Hex(uint16_t value) {
 */
 void lcdprintmenu(bool setting, int16_t i){
   lcd.clear();
-  lcd.setCursor(0,0);
-  lcd.print("Set CO2 = ");
-  lcd.setCursor(10,0);
+  lcd.setCursor(0,1);
+  lcd.print("Set CO2  = ");
+  lcd.setCursor(11,1);
   lcd.print(setCO2);
-  lcd.setCursor(15,0);
+  lcd.setCursor(16,1);
   lcd.print("ppm");
   
-  lcd.setCursor(0,1);
+  lcd.setCursor(0,0);
   lcd.print("Set Temp = ");
-  lcd.setCursor(12,1);
+  lcd.setCursor(12,0);
   lcd.print(setTemp);
-  lcd.setCursor(16,1);
-  lcd.print("C");
+  lcd.setCursor(16,0);
+  lcd.print(" C");
 
   lcd.setCursor(0,2);
   lcd.print("Set Umid = ");
-  lcd.setCursor(12,1);
+  lcd.setCursor(12,2);
   lcd.print(setRH);
-  lcd.setCursor(16,1);
+  lcd.setCursor(16,2);
   lcd.print("%");
 
   lcd.setCursor(0,3);
-  if (setting = false)
-    lcd.print("Select  V  Inapoi ->");
+  if (setting == false)
+    lcd.print("Select V  Inchide ->");
   else
-    lcd.print("Inapoi  V");
+    lcd.print("Inapoi V  Inchide ->");
 
   lcd.setCursor(19,i%3);
   lcd.print("*");
@@ -152,18 +83,18 @@ void lcdprintmenu(bool setting, int16_t i){
 
 void printlcd(uint16_t co2, float temperature, float humidity){
   lcd.clear();
-  lcd.setCursor(0,0);
+  lcd.setCursor(0,1);
   lcd.print("CO2 = ");
-  lcd.setCursor(6,0);
+  lcd.setCursor(6,1);
   lcd.print(co2);
-  lcd.setCursor(11,0);
+  lcd.setCursor(11,1);
   lcd.print("ppm");
 
-  lcd.setCursor(0,1);
+  lcd.setCursor(0,0);
   lcd.print("Temperatura = ");
-  lcd.setCursor(14,1);
+  lcd.setCursor(14,0);
   lcd.print(temperature);
-  lcd.setCursor(18,1);
+  lcd.setCursor(18,0);
   lcd.print("C");
 
   lcd.setCursor(0,2);
@@ -176,6 +107,84 @@ void printlcd(uint16_t co2, float temperature, float humidity){
   lcd.setCursor(0,3);
   lcd.print("Seteaza parametrii >");
 }
+void handleinterrupt(){
+
+  
+  lcdprintmenu(setting, i);
+
+    //sa aiba butoanele de pe pin 4,5 desene de up/down
+  if((PIND & (1<<PIN5)) == 0)
+    i--;
+  if((PIND & (1<<PIN4)) == 0)
+    i++;
+  delay(100);
+  lcdprintmenu(setting, i);
+  if((PIND & (1<<PIN3)) == 0)
+  {
+    setting = true;
+    delay(1000);
+    switch (i%3){
+        case 1:
+          lcdprintmenu(setting, i);
+          while((PIND & (1<<PIN3)) == (1<<PIN3) && menu_interrupt){
+            
+            if((PIND & (1<<PIN5)) == 0){
+                setCO2 += 10;
+                lcdprintmenu(setting, i);
+                delay(100);
+            } 
+            if((PIND & (1<<PIN4)) == 0){
+                setCO2 -= 10;
+                lcdprintmenu(setting, i);
+                delay(100);
+            }
+          }
+          break;
+
+        case 0:
+          lcdprintmenu(setting, i);
+          while((PIND & (1<<PIN3)) == (1<<PIN3) && menu_interrupt){
+            if((PIND & (1<<PIN5)) == 0){
+              setTemp += 0.1;
+              lcdprintmenu(setting, i);
+              delay(100);
+            }
+            if((PIND & (1<<PIN4)) == 0){
+              setTemp -= 0.1;
+              lcdprintmenu(setting, i);
+              delay(100);
+            }
+          }
+          break;
+
+
+        case 2:
+          lcdprintmenu(setting, i);
+          while((PIND & (1<<PIN3)) == (1<<PIN3) && menu_interrupt){
+            if((PIND & (1<<PIN5)) == 0){
+              setRH += 1;
+              lcdprintmenu(setting, i);
+              delay(100);
+            }
+            if((PIND & (1<<PIN4)) == 0){
+              setRH -= 1;
+              lcdprintmenu(setting, i);
+              delay(100);
+            }
+          }
+          break;
+
+    }
+    else
+      setting = false; //merge sau fute mai incolo?
+
+  }
+
+    
+
+    
+}
+
 void setup() {
 
   SREG |= 1<<SREG_I;
@@ -234,7 +243,8 @@ void setup() {
 }
 
 void loop() {
-
+  
+if (menu_interrupt == false){
   uint16_t error;
   char errorMessage[256];
 
@@ -275,7 +285,7 @@ void loop() {
     else if(co2<setCO2-100)
       PORTB &= ~(1<<PIN0);
     // temp daca merge aerul
-    if(PINB & (1<<PIN0) == 1<<PIN0){
+    if((PINB & (1<<PIN0)) == (1<<PIN0)){
       //cald
       if(temperature<setTemp-1)
         PORTB|=1<<PIN1;
@@ -295,8 +305,12 @@ void loop() {
     }
 
     if(humidity<setRH-10)
-      PORTB|=1<<PIN3;
+      PORTB|=(1<<PIN3);
     else if (humidity>setRH+5)
       PORTB &= ~(1<<PIN3);
+  }
+  }
+  else{
+    handleinterrupt();
   }
 }
