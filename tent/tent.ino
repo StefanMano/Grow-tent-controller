@@ -5,6 +5,7 @@
 LiquidCrystal_I2C lcd(0x27,20,4);
 SensirionI2CScd4x scd4x;
 #include <avr/interrupt.h>
+#include <EEPROM.h>
 
 #define PIN0 0
 #define PIN1 1
@@ -14,13 +15,16 @@ SensirionI2CScd4x scd4x;
 #define PIN5 5
 #define PIN6 6
 #define PIN7 7
-
-uint16_t setCO2=1000;
-float setTemp=16.0f;
-float setRH=85.0f;
+int EEPROM_CO2 = 0;
+int EEPROM_umid = 1;
+int EEPROM_temp = 2;
+uint16_t setCO2;
+float setTemp;
+float setRH;
 volatile bool menu_interrupt = false;
 int16_t i=1002;
 volatile bool setting = false;
+bool cald=true,rece=true,umid=true;
 ISR(INT0_vect)
 {
   if(menu_interrupt){
@@ -32,22 +36,10 @@ ISR(INT0_vect)
     i=1002;
    setting = false;
   }
+  delay(50);
 }
-/*
-void printSerialNumber(uint16_t serial0, uint16_t serial1, uint16_t serial2) {
-    Serial.print("Serial: 0x");
-    printUint16Hex(serial0);
-    printUint16Hex(serial1);
-    printUint16Hex(serial2);
-    Serial.println();
-}
-void printUint16Hex(uint16_t value) {
-    Serial.print(value < 4096 ? "0" : "");
-    Serial.print(value < 256 ? "0" : "");
-    Serial.print(value < 16 ? "0" : "");
-    Serial.print(value, HEX);
-}
-*/
+
+
 void lcdprintmenu(bool setting, int16_t i){
   lcd.clear();
   lcd.setCursor(0,1);
@@ -175,8 +167,10 @@ void handleinterrupt(){
           break;
 
     }
-    else
-      setting = false; //merge sau fute mai incolo?
+    EEPROM.put(EEPROM_CO2,setCO2);
+    EEPROM.put(EEPROM_umid,setRH);
+    EEPROM.put(EEPROM_temp,setTemp);
+    setting = false;
 
   }
 
@@ -187,6 +181,9 @@ void handleinterrupt(){
 
 void setup() {
 
+  EEPROM.get(EEPROM_CO2,setCO2);
+  EEPROM.get(EEPROM_umid,setRH);
+  EEPROM.get(EEPROM_temp,setTemp);
   SREG |= 1<<SREG_I;
   //HI-LO INTERRUPT ON PIN 0
   EICRA = (0<<ISC11)|(0<<ISC10)|(1<<ISC01)|(0<<ISC00);
@@ -219,18 +216,6 @@ void setup() {
       Serial.println(errorMessage);
   }
 
-  /*uint16_t serial0;
-  uint16_t serial1;
-  uint16_t serial2;
-  error = scd4x.getSerialNumber(serial0, serial1, serial2);
-  if (error) {
-      Serial.print("Error trying to execute getSerialNumber(): ");
-      errorToString(error, errorMessage, 256);
-      Serial.println(errorMessage);
-  } else {
-      printSerialNumber(serial0, serial1, serial2);
-  }
-*/
   // Start Measurement
   error = scd4x.startPeriodicMeasurement();
   if (error) {
@@ -255,7 +240,7 @@ if (menu_interrupt == false){
   float temperature = 0.0f;
   float humidity = 0.0f;
   bool isDataReady = false;
-
+ 
   error = scd4x.getDataReadyFlag(isDataReady);
   if (error) {
       Serial.print("Error trying to execute getDataReadyFlag(): ");
@@ -280,34 +265,49 @@ if (menu_interrupt == false){
   else {
     printlcd(co2,temperature,humidity);
     //FAE
-    if(co2>setCO2+200)
+    if(co2>setCO2)
       PORTB|=1<<PIN0;
-    else if(co2<setCO2-100)
+    else if(co2<setCO2&&(cald==false)&&(rece==false)&&(umid==false))
       PORTB &= ~(1<<PIN0);
     // temp daca merge aerul
-    if((PINB & (1<<PIN0)) == (1<<PIN0)){
+    
       //cald
       if(temperature<setTemp-1)
-        PORTB|=1<<PIN1;
+        {
+          PORTB|=(1<<PIN1);
+          PORTB|=1<<PIN0;
+          cald = true;
+        }
       else if(temperature>setTemp+1)
-        PORTB &= ~(1<<PIN1);
+        {PORTB &= ~(1<<PIN1);
+        cald=false;
+        }
+        
       
       //rece
       if(temperature>setTemp+2)
-        PORTB|=1<<PIN2;
+        {
+          PORTB|=(1<<PIN2);
+          PORTB|=1<<PIN0;
+          rece=true;
+        }
       else if(temperature<setTemp)
-        PORTB &= ~(1<<PIN2);
-      }
+        {PORTB &= ~(1<<PIN2);
+        rece=false;
+        }
+      
       //daca nu merge oprim tot 
-    else{
-      PORTB &= ~(1<<PIN1);
-      PORTB &= ~(1<<PIN2);
-    }
-
-    if(humidity<setRH-10)
-      PORTB|=(1<<PIN3);
-    else if (humidity>setRH+5)
-      PORTB &= ~(1<<PIN3);
+    
+    if(humidity<setRH)
+      {
+        PORTB|=(1<<PIN3);
+        PORTB|=1<<PIN0;
+        umid=true;
+      }
+    else if (humidity>setRH)
+      {PORTB &= ~(1<<PIN3);
+      umid=false;
+      }
   }
   }
   else{
