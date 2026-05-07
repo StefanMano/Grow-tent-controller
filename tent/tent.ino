@@ -6,6 +6,7 @@ LiquidCrystal_I2C lcd(0x27,20,4);
 SensirionI2CScd4x scd4x;
 #include <avr/interrupt.h>
 #include <EEPROM.h>
+#include <avr/wdt.h>
 
 #define PIN0 0
 #define PIN1 1
@@ -16,8 +17,8 @@ SensirionI2CScd4x scd4x;
 #define PIN6 6
 #define PIN7 7
 int EEPROM_CO2 = 0;
-int EEPROM_umid = 1;
-int EEPROM_temp = 2;
+int EEPROM_umid = 8;
+int EEPROM_temp = 16;
 uint16_t setCO2;
 float setTemp;
 float setRH;
@@ -36,11 +37,12 @@ ISR(INT0_vect)
     i=1002;
    setting = false;
   }
-  delay(50);
+  
 }
 
 
 void lcdprintmenu(bool setting, int16_t i){
+  wdt_reset();
   lcd.clear();
   lcd.setCursor(0,1);
   lcd.print("Set CO2  = ");
@@ -103,7 +105,7 @@ void handleinterrupt(){
 
   
   lcdprintmenu(setting, i);
-
+  delay(200);
     //sa aiba butoanele de pe pin 4,5 desene de up/down
   if((PIND & (1<<PIN5)) == 0)
     i--;
@@ -181,14 +183,15 @@ void handleinterrupt(){
 
 void setup() {
 
+  wdt_enable(WDTO_8S); 
   EEPROM.get(EEPROM_CO2,setCO2);
   EEPROM.get(EEPROM_umid,setRH);
   EEPROM.get(EEPROM_temp,setTemp);
   SREG |= 1<<SREG_I;
   //HI-LO INTERRUPT ON PIN 0
-  EICRA = (0<<ISC11)|(0<<ISC10)|(1<<ISC01)|(0<<ISC00);
-  EIMSK = (0<<INT1)|(1<<INT0);
-  EIFR = (0<<INTF1)|(0<<INTF0);
+  EICRA = (1<<ISC01)|(0<<ISC00);
+  EIMSK = (1<<INT0);
+  EIFR = (1<<INTF1)|(1<<INTF0);
   DDRD = 0x00;
   PORTD = 0xFF;//tre schimbat pe pinii care au butoane doar
 
@@ -229,88 +232,91 @@ void setup() {
 
 void loop() {
   
-if (menu_interrupt == false){
-  uint16_t error;
-  char errorMessage[256];
+  wdt_reset();
 
-  delay(100);
+  if (menu_interrupt == false){
+    uint16_t error;
+    char errorMessage[256];
 
-  // Read Measurement & afisare
-  uint16_t co2 = 0;
-  float temperature = 0.0f;
-  float humidity = 0.0f;
-  bool isDataReady = false;
- 
-  error = scd4x.getDataReadyFlag(isDataReady);
-  if (error) {
-      Serial.print("Error trying to execute getDataReadyFlag(): ");
-      errorToString(error, errorMessage, 256);
-      Serial.println(errorMessage);
-      return;
-  }
-  if (!isDataReady) {
-      return;
-  }
+    delay(100);
+
+    // Read Measurement & afisare
+    uint16_t co2 = 0;
+    float temperature = 0.0f;
+    float humidity = 0.0f;
+    bool isDataReady = false;
+  
+    error = scd4x.getDataReadyFlag(isDataReady);
+    if (error) {
+        Serial.print("Error trying to execute getDataReadyFlag(): ");
+        errorToString(error, errorMessage, 256);
+        Serial.println(errorMessage);
+        return;
+    }
+    if (!isDataReady) {
+        return;
+    }
 
 
 
-  error = scd4x.readMeasurement(co2, temperature, humidity);
-  if (error) {
-      Serial.print("Error trying to execute readMeasurement(): ");
-      errorToString(error, errorMessage, 256);
-      Serial.println(errorMessage);
-  } else if (co2 == 0) {
-      Serial.println("Invalid sample detected, skipping.");
-  } 
-  else {
-    printlcd(co2,temperature,humidity);
-    //FAE
-    if(co2>setCO2)
-      PORTB|=1<<PIN0;
-    else if(co2<setCO2&&(cald==false)&&(rece==false)&&(umid==false))
-      PORTB &= ~(1<<PIN0);
-    // temp daca merge aerul
-    
-      //cald
-      if(temperature<setTemp-1)
-        {
-          PORTB|=(1<<PIN1);
-          PORTB|=1<<PIN0;
-          cald = true;
-        }
-      else if(temperature>setTemp+1)
-        {PORTB &= ~(1<<PIN1);
-        cald=false;
-        }
-        
-      
-      //rece
-      if(temperature>setTemp+2)
-        {
-          PORTB|=(1<<PIN2);
-          PORTB|=1<<PIN0;
-          rece=true;
-        }
-      else if(temperature<setTemp)
-        {PORTB &= ~(1<<PIN2);
-        rece=false;
-        }
-      
-      //daca nu merge oprim tot 
-    
-    if(humidity<setRH)
-      {
-        PORTB|=(1<<PIN3);
+    error = scd4x.readMeasurement(co2, temperature, humidity);
+    if (error) {
+        Serial.print("Error trying to execute readMeasurement(): ");
+        errorToString(error, errorMessage, 256);
+        Serial.println(errorMessage);
+    } else if (co2 == 0) {
+        Serial.println("Invalid sample detected, skipping.");
+    } 
+    else {
+      printlcd(co2,temperature,humidity);
+      //FAE
+      if(co2>setCO2)
         PORTB|=1<<PIN0;
-        umid=true;
-      }
-    else if (humidity>setRH)
-      {PORTB &= ~(1<<PIN3);
-      umid=false;
-      }
-  }
+      else if(co2<setCO2&&(cald==false)&&(rece==false)&&(umid==false))
+        PORTB &= ~(1<<PIN0);
+      // temp daca merge aerul
+      
+        //cald
+        if(temperature<setTemp-1)
+          {
+            PORTB|=(1<<PIN1);
+            PORTB|=1<<PIN0;
+            cald = true;
+          }
+        else if(temperature>setTemp+1)
+          {PORTB &= ~(1<<PIN1);
+          cald=false;
+          }
+          
+        
+        //rece
+        if(temperature>setTemp+2)
+          {
+            PORTB|=(1<<PIN2);
+            PORTB|=1<<PIN0;
+            rece=true;
+          }
+        else if(temperature<setTemp)
+          {PORTB &= ~(1<<PIN2);
+          rece=false;
+          }
+        
+        //daca nu merge oprim tot 
+      
+      if(humidity<setRH)
+        {
+          PORTB|=(1<<PIN3);
+          PORTB|=1<<PIN0;
+          umid=true;
+        }
+      else if (humidity>setRH)
+        {PORTB &= ~(1<<PIN3);
+        umid=false;
+        }
+    }
   }
   else{
+    delay(50);
     handleinterrupt();
   }
 }
